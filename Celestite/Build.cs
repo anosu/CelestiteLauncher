@@ -1,1 +1,1 @@
-namespace Celestite; public class Build { public const string BuildId = "DebugEnv 1.9.99999.0"; }
+namespace Celestite; public class Build { public const string BuildId = "Beta 2.0.25091.1"; }

@@ -7,6 +7,7 @@ using Avalonia.Threading;
 using Celestite.Configs;
 using Celestite.I18N;
 using Celestite.Network;
+using Celestite.Network.Models;
 using Celestite.Utils;
 using Celestite.ViewModels.DefaultVM;
 using Celestite.ViewModels.Dialogs;
@@ -83,6 +84,7 @@ namespace Celestite.ViewModels.Pages
 
                 try
                 {
+                    HttpHelper.ClearCookies();
                     var login = await DmmOpenApiHelper.Login(viewModel.Email, viewModel.Password);
                     if (login.Failed) return;
                     var acc = new AccountObject
@@ -90,7 +92,7 @@ namespace Celestite.ViewModels.Pages
                         AutoLogin = viewModel.AutoLogin,
                         Email = viewModel.Email,
                         Password = viewModel.Password,
-                        RefreshToken = login.Value.RefreshToken,
+                        RefreshToken = string.Empty,
                         SaveEmail = true,
                         SavePassword = true,
                         UserId = string.Empty
@@ -105,6 +107,59 @@ namespace Celestite.ViewModels.Pages
                 }
             }
         }
+
+        //[RelayCommand]
+        //private async Task AddAccount()
+        //{
+        //    var viewModel = Dispatcher.UIThread.Invoke(() => ((UserControl)LoginPageViewModel.DefaultLoginFormDialog.Content!).DataContext as DefaultLoginFormDialogViewModel)!;
+        //    viewModel.Reset(lockSave: true);
+
+        //    var result = await LoginPageViewModel.DefaultLoginFormDialog.ShowAsync();
+        //    if (result == ContentDialogResult.Primary)
+        //    {
+        //        if (AccountObjects.Any(x => x.Email == viewModel.Email))
+        //        {
+        //            NotificationHelper.Warn(Localization.AccountIsExistsError);
+        //            return;
+        //        }
+
+        //        if (string.IsNullOrEmpty(viewModel.Email))
+        //        {
+        //            NotificationHelper.Warn(Localization.EmailRequiredErrorMessage);
+        //            return;
+        //        }
+        //        if (string.IsNullOrEmpty(viewModel.Password))
+        //        {
+        //            NotificationHelper.Warn(Localization.PasswordRequiredErrorMessage);
+        //            return;
+        //        }
+
+        //        IsAccountBusy = true;
+
+        //        try
+        //        {
+        //            var login = await DmmOpenApiHelper.Login(viewModel.Email, viewModel.Password);
+        //            if (login.Failed) return;
+        //            var acc = new AccountObject
+        //            {
+        //                AutoLogin = viewModel.AutoLogin,
+        //                Email = viewModel.Email,
+        //                Password = viewModel.Password,
+        //                RefreshToken = login.Value.RefreshToken,
+        //                SaveEmail = true,
+        //                SavePassword = true,
+        //                UserId = string.Empty
+        //            };
+        //            ConfigUtils.PushAccountObject(acc, notPushLastLogin: true);
+        //            AccountObjects.Add(new AccountObjectForRenderer(acc.Email, string.Empty, acc.Id, viewModel.AutoLogin, false));
+        //            NotificationHelper.Success(Localization.AddAccountSuccess);
+        //        }
+        //        finally
+        //        {
+        //            IsAccountBusy = false;
+        //        }
+        //    }
+        //}
 
         [RelayCommand]
         private void DeleteAccount(Guid innerGuid)
@@ -151,45 +206,33 @@ namespace Celestite.ViewModels.Pages
                     return;
                 }
 
-                if (!string.IsNullOrEmpty(accountObject!.RefreshToken) && !string.IsNullOrEmpty(accountObject.UserId))
+                DmmOpenApiResult<SessionIdResponse> loginSession;
+                HttpHelper.ClearCookies();
+                if (!string.IsNullOrEmpty(accountObject!.RefreshToken) && !string.IsNullOrEmpty(accountObject.Email) && !string.IsNullOrEmpty(accountObject.Password))
                 {
-                    DmmOpenApiHelper.UpdateRefreshToken(accountObject!.RefreshToken);
-                    var refresh = await DmmOpenApiHelper.RefreshToken();
-                    if (refresh.Failed)
+                    var login = await DmmOpenApiHelper.Login(accountObject.Email, accountObject.Password);
+                    if (login.Failed)
                     {
                         accountObject.RefreshToken = string.Empty;
                         ConfigUtils.Save();
                         return;
                     }
-                    accountObject.RefreshToken = refresh.Value.RefreshToken;
+                    loginSession = login;
                 }
                 else
                 {
                     var login = await DmmOpenApiHelper.Login(accountObject.Email, accountObject.Password);
                     if (login.Failed) return;
-
-                    accountObject.RefreshToken = login.Value.RefreshToken;
-
-                    var exchangeAccessToken = await DmmOpenApiHelper.ExchangeAccessToken(login.Value.AccessToken);
-                    if (exchangeAccessToken.Failed) return;
-
-                    if (string.IsNullOrEmpty(accountObject.UserId))
-                    {
-                        if (!JwtUtils.TryParseIdToken(login.Value.IdToken, out var idToken) ||
-                            string.IsNullOrEmpty(idToken?.UserId))
-                        {
-                            NotificationHelper.Warn(Localization.InvalidIdTokenError);
-                            return;
-                        }
-
-                        accountObject.UserId = idToken.UserId;
-                    }
+                    loginSession = login;
                 }
 
-                var issueSessionId = await DmmOpenApiHelper.IssueSessionId(accountObject.UserId);
-                if (issueSessionId.Failed) return;
+                if (loginSession == null)
+                {
+                    NotificationHelper.Warn("Login failed");
+                    return;
+                }
 
-                DmmGamePlayerApiHelper.SetUserCookies(issueSessionId.Value.SecureId, issueSessionId.Value.UniqueId);
+                DmmGamePlayerApiHelper.SetUserCookies(loginSession.Value.SecureId, loginSession.Value.UniqueId);
                 DmmGamePlayerApiHelper.SetAgeCheckDone();
                 ConfigUtils.PushAccountObject(accountObject);
 
@@ -218,5 +261,96 @@ namespace Celestite.ViewModels.Pages
                 IsAccountBusy = false;
             }
         }
+
+        //[RelayCommand]
+        //private async Task ChangeAccount(Guid innerGuid)
+        //{
+        //    if (ConfigUtils.IsLastLogin(innerGuid))
+        //    {
+        //        NotificationHelper.Warn(Localization.AccountIsUsingError);
+        //        return;
+        //    }
+        //    if (IsAccountBusy)
+        //    {
+        //        NotificationHelper.Warn(Localization.AccountBusyError);
+        //        return;
+        //    }
+
+        //    IsAccountBusy = true;
+        //    try
+        //    {
+        //        if (!ConfigUtils.TryGetAccountObjectByGuid(innerGuid, out var accountObject))
+        //        {
+        //            NotificationHelper.Warn(Localization.AccountNotExistsError);
+        //            return;
+        //        }
+
+        //        if (!string.IsNullOrEmpty(accountObject!.RefreshToken) && !string.IsNullOrEmpty(accountObject.UserId))
+        //        {
+        //            DmmOpenApiHelper.UpdateRefreshToken(accountObject!.RefreshToken);
+        //            var refresh = await DmmOpenApiHelper.RefreshToken();
+        //            if (refresh.Failed)
+        //            {
+        //                accountObject.RefreshToken = string.Empty;
+        //                ConfigUtils.Save();
+        //                return;
+        //            }
+        //            accountObject.RefreshToken = refresh.Value.RefreshToken;
+        //        }
+        //        else
+        //        {
+        //            var login = await DmmOpenApiHelper.Login(accountObject.Email, accountObject.Password);
+        //            if (login.Failed) return;
+
+        //            accountObject.RefreshToken = login.Value.RefreshToken;
+
+        //            var exchangeAccessToken = await DmmOpenApiHelper.ExchangeAccessToken(login.Value.AccessToken);
+        //            if (exchangeAccessToken.Failed) return;
+
+        //            if (string.IsNullOrEmpty(accountObject.UserId))
+        //            {
+        //                if (!JwtUtils.TryParseIdToken(login.Value.IdToken, out var idToken) ||
+        //                    string.IsNullOrEmpty(idToken?.UserId))
+        //                {
+        //                    NotificationHelper.Warn(Localization.InvalidIdTokenError);
+        //                    return;
+        //                }
+
+        //                accountObject.UserId = idToken.UserId;
+        //            }
+        //        }
+
+        //        var issueSessionId = await DmmOpenApiHelper.IssueSessionId(accountObject.UserId);
+        //        if (issueSessionId.Failed) return;
+
+        //        DmmGamePlayerApiHelper.SetUserCookies(issueSessionId.Value.SecureId, issueSessionId.Value.UniqueId);
+        //        DmmGamePlayerApiHelper.SetAgeCheckDone();
+        //        ConfigUtils.PushAccountObject(accountObject);
+
+        //        var userInfo = await DmmGamePlayerApiHelper.GetUserInfo();
+        //        if (userInfo.Failed)
+        //        {
+        //            NotificationHelper.Warn(userInfo.ErrorMessage!);
+        //            return;
+        //        }
+
+        //        foreach (var acc in AccountObjects)
+        //        {
+        //            if (acc.InnerGuid == innerGuid)
+        //            {
+        //                acc.NickName = userInfo.Value.Profile.Nickname;
+        //                acc.IsCurrent = true;
+        //            }
+        //            else
+        //                acc.IsCurrent = false;
+        //        }
+
+        //        NotificationHelper.Success(Localization.SwitchAccountSuccess);
+        //    }
+        //    finally
+        //    {
+        //        IsAccountBusy = false;
+        //    }
+        //}
     }
 }

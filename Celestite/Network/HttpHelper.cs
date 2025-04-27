@@ -272,6 +272,7 @@ namespace Celestite.Network
                 SslOptions = new SslClientAuthenticationOptions
                 {
                     // RemoteCertificateValidationCallback = ServerCertificateCustomValidation_SocketsHttpHandler,
+                    //RemoteCertificateValidationCallback = (sender, cert, chain, sslPolicyErrors) => true, // 取消证书验证
 #if !DEBUG
                     CertificateChainPolicy = policy
 #endif
@@ -866,6 +867,21 @@ namespace Celestite.Network
             catch (Exception ex)
             {
                 return NetworkOperationResult.Fail<HttpResponseMessage>(ex);
+            }
+        }
+
+        public static async UniTask<NetworkOperationResult<string>> GetStringAsync(string url, CancellationToken cancellationToken = default)
+        {
+            try
+            {
+                var response = await MainHttpClient.GetAsync(url, cancellationToken);
+                if (response.IsSuccessStatusCode)
+                    return NetworkOperationResult.Ok(await response.Content.ReadAsStringAsync());
+                throw new HttpRequestException($"Error StatusCode {response.StatusCode}");
+            }
+            catch (Exception ex)
+            {
+                return NetworkOperationResult.Fail<string>(ex);
             }
         }
     }

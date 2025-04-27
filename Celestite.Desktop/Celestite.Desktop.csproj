@@ -11,6 +11,14 @@
     <Trimming></Trimming>
     <EnablePreviewFeatures>True</EnablePreviewFeatures>
     <ApplicationIcon>Assets\celestite-icon.ico</ApplicationIcon>
+    <Authors>Kengxxiao</Authors>
+    <Company>Kengxxiao</Company>
+    <Product>Celestite Launcher</Product>
+    <Description>Celestite Launcher</Description>
+    <Copyright>Copyright © 2025 Kengxxiao</Copyright>
+    <Version>2.0.25092.1</Version>
+    <FileVersion>2.0.25092.1</FileVersion>
+    <InformationalVersion>2.0.25092.1</InformationalVersion>
   </PropertyGroup>
 
   <PropertyGroup Condition="$(RuntimeIdentifier.StartsWith('linux'))">
