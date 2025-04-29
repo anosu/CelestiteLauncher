@@ -217,11 +217,11 @@ namespace Celestite.Utils
 
         public static Dictionary<Guid, AccountObject> GetAllAccountObjects() => _config.Accounts;
 
-        public static bool TryGetAccountObjectByUserId(string userId, out AccountObject? accountObject)
-        {
-            accountObject = _config.Accounts.Values.FirstOrDefault(x => x.UserId == userId);
-            return accountObject != null;
-        }
+        //public static bool TryGetAccountObjectByUserId(string userId, out AccountObject? accountObject)
+        //{
+        //    accountObject = _config.Accounts.Values.FirstOrDefault(x => x.UserId == userId);
+        //    return accountObject != null;
+        //}
 
         public static void PushAccountObject(AccountObject accountObject, bool notPushLastLogin = false)
         {

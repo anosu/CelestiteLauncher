@@ -336,8 +336,18 @@ namespace Celestite.Configs
         [MemoryPackOrder(7)]
         [EncryptedInternStringFormatter]
         public string RefreshToken { get; set; } = string.Empty;
-
-        [MemoryPackOrder(8)][EncryptedInternStringFormatter] public string NickName { get; set; } = string.Empty;
+        [MemoryPackOrder(8)]
+        [EncryptedInternStringFormatter]
+        public string NickName { get; set; } = string.Empty;
+        [MemoryPackOrder(9)]
+        [EncryptedInternStringFormatter]
+        public string AccessToken { get; set; } = string.Empty;
+        [MemoryPackOrder(10)]
+        [EncryptedInternStringFormatter]
+        public string LoginSecureId { get; set; } = string.Empty;
+        [MemoryPackOrder(11)]
+        [EncryptedInternStringFormatter]
+        public string LoginSessionId { get; set; } = string.Empty;
     }
 
     [MemoryPackable(SerializeLayout.Explicit)]

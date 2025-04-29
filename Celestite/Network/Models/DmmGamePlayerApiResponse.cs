@@ -33,6 +33,17 @@ public sealed class LoginUrlResponse
     public string Url { get; set; } = string.Empty;
 }
 
+public sealed class IssueAccessTokenResponse
+{
+    public string AccessToken { get; set; } = string.Empty;
+    public int ExpiresInSeconds { get; set; }
+}
+
+public sealed class CheckAccessTokenResponse
+{
+    public bool Result { get; set; }
+}
+
 public sealed class UserInfoResponse : UserInfo
 {
     public bool PointValid { get; set; }
@@ -301,6 +312,8 @@ public class ArtemisInitGameFrameResponse
 
 [JsonSerializable(typeof(DmmGamePlayerApiResponse))]
 [JsonSerializable(typeof(DmmGamePlayerApiResponse<LoginUrlResponse>))]
+[JsonSerializable(typeof(DmmGamePlayerApiResponse<IssueAccessTokenResponse>))]
+[JsonSerializable(typeof(DmmGamePlayerApiResponse<CheckAccessTokenResponse>))]
 [JsonSerializable(typeof(DmmGamePlayerApiResponse<UserInfoResponse>))]
 [JsonSerializable(typeof(DmmGamePlayerApiResponse<UserInfo>))]
 [JsonSerializable(typeof(DmmGamePlayerApiResponse<List<AnnounceInfo>>))]

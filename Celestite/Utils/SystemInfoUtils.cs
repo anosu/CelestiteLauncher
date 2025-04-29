@@ -106,7 +106,7 @@ namespace Celestite.Utils
 
         private const string ProcessElectronVersion = "33.3.1";
 
-        public const string AppConfigProtocolVersion = "5.3.20";
+        public const string AppConfigProtocolVersion = "5.4.3";
         public const string Architecture = "amd64";
 
         private static string? _userOs;

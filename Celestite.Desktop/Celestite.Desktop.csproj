@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <!--If you are willing to use Windows/MacOS native APIs you will need to create 3 projects.
@@ -16,9 +16,9 @@
     <Product>Celestite Launcher</Product>
     <Description>Celestite Launcher</Description>
     <Copyright>Copyright © 2025 Kengxxiao</Copyright>
-    <Version>2.0.25092.1</Version>
-    <FileVersion>2.0.25092.1</FileVersion>
-    <InformationalVersion>2.0.25092.1</InformationalVersion>
+    <Version>2.0.25125.1</Version>
+    <FileVersion>2.0.25125.1</FileVersion>
+    <InformationalVersion>2.0.25125.1</InformationalVersion>
   </PropertyGroup>
 
   <PropertyGroup Condition="$(RuntimeIdentifier.StartsWith('linux'))">
@@ -50,3 +50,6 @@
     <ProjectReference Include="..\Celestite\Celestite.csproj" />
   </ItemGroup>
 </Project>
+
+
+

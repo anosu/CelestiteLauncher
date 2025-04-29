@@ -57,6 +57,8 @@ namespace Celestite.Network
 
         private static readonly ConcurrentBag<ulong> CachedCertificatesHash = [];
 
+        public static string ActAuth { get; set; } = string.Empty;
+
         public static string LoginSecureId { get; set; } = string.Empty;
         public static string LoginSessionId { get; set; } = string.Empty;
 
@@ -76,6 +78,15 @@ namespace Celestite.Network
         }
 
         private static readonly Log Logger = LogManager.GetLogger("HTTP");
+
+        public static void SetUserHeader(string name, string value, bool remove = true)
+        {
+            if (remove)
+            {
+                MainHttpClient.DefaultRequestHeaders.Remove(name);
+            }
+            MainHttpClient.DefaultRequestHeaders.TryAddWithoutValidation(name, value);
+        }
 
         public static void ClearCookies()
         {
@@ -283,11 +294,9 @@ namespace Celestite.Network
             policyHttpMessageHandler.InnerHandler = socksHandler;
             var client = new HttpClient(policyHttpMessageHandler);
             client.HttpClientImpl();
-            client.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent",
-                SystemInfoUtils.RequestHeaderUserAgentName);
+            client.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", SystemInfoUtils.RequestHeaderUserAgentName);
             client.DefaultRequestHeaders.TryAddWithoutValidation("Client-App", "DMMGamePlayer5");
-            client.DefaultRequestHeaders.TryAddWithoutValidation("Client-version",
-                SystemInfoUtils.AppConfigProtocolVersion);
+            client.DefaultRequestHeaders.TryAddWithoutValidation("Client-version", SystemInfoUtils.AppConfigProtocolVersion);
             return client;
         }
 
@@ -867,6 +876,21 @@ namespace Celestite.Network
             catch (Exception ex)
             {
                 return NetworkOperationResult.Fail<HttpResponseMessage>(ex);
+            }
+        }
+
+        public static async UniTask<NetworkOperationResult<TResp>> SendRawAsync<TResp>(HttpRequestMessage requestMessage, JsonTypeInfo<TResp> responseJsonTypeInfo, CancellationToken cancellationToken = default) where TResp : class
+        {
+            try
+            {
+                var response = await MainHttpClient.SendAsync(requestMessage, HttpCompletionOption.ResponseContentRead, cancellationToken).ConfigureAwait(false);
+                response.EnsureSuccessStatusCode();
+                var jsonResponse = await response.Content.ReadFromJsonAsync(responseJsonTypeInfo, cancellationToken).ConfigureAwait(false);
+                return jsonResponse == null ? NetworkOperationResult.Fail<TResp>(new NoNullAllowedException()) : NetworkOperationResult.Ok(jsonResponse);
+            }
+            catch (Exception ex)
+            {
+                return NetworkOperationResult.Fail<TResp>(ex);
             }
         }
 

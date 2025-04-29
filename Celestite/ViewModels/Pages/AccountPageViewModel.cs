@@ -85,21 +85,47 @@ namespace Celestite.ViewModels.Pages
                 try
                 {
                     HttpHelper.ClearCookies();
-                    var login = await DmmOpenApiHelper.Login(viewModel.Email, viewModel.Password);
-                    if (login.Failed) return;
+                    var loginResponse = await DmmOpenApiHelper.LegacyLogin(viewModel.Email, viewModel.Password);
+                    if (loginResponse.Failed)
+                    {
+                        NotificationHelper.Warn($"Login failed, {loginResponse.Error!.Reason}");
+                        return;
+                    }
+
                     var acc = new AccountObject
                     {
                         AutoLogin = viewModel.AutoLogin,
                         Email = viewModel.Email,
                         Password = viewModel.Password,
-                        RefreshToken = string.Empty,
+                        LoginSecureId = loginResponse.Value.SecureId,
+                        LoginSessionId = loginResponse.Value.UniqueId,
                         SaveEmail = true,
-                        SavePassword = true,
-                        UserId = string.Empty
+                        SavePassword = true
                     };
                     ConfigUtils.PushAccountObject(acc, notPushLastLogin: true);
                     AccountObjects.Add(new AccountObjectForRenderer(acc.Email, string.Empty, acc.Id, viewModel.AutoLogin, false));
+                    DmmGamePlayerApiHelper.SetUserCookies(HttpHelper.LoginSecureId, HttpHelper.LoginSessionId);
                     NotificationHelper.Success(Localization.AddAccountSuccess);
+
+                    //HttpHelper.ClearCookies();
+                    //var loginCodeResponse = await DmmOpenApiHelper.Login(viewModel.Email, viewModel.Password);
+                    //if (loginCodeResponse.Failed) return;
+
+                    //var accessTokenResponse = await DmmGamePlayerApiHelper.IssueAccessToken(loginCodeResponse.Value.Code);
+                    //if (accessTokenResponse.Failed) return;
+
+                    //var acc = new AccountObject
+                    //{
+                    //    AutoLogin = viewModel.AutoLogin,
+                    //    Email = viewModel.Email,
+                    //    Password = viewModel.Password,
+                    //    AccessToken = accessTokenResponse.Value.AccessToken,
+                    //    SaveEmail = true,
+                    //    SavePassword = true
+                    //};
+                    //ConfigUtils.PushAccountObject(acc, notPushLastLogin: true);
+                    //AccountObjects.Add(new AccountObjectForRenderer(acc.Email, string.Empty, acc.Id, viewModel.AutoLogin, false));
+                    //NotificationHelper.Success(Localization.AddAccountSuccess);
                 }
                 finally
                 {
@@ -206,35 +232,64 @@ namespace Celestite.ViewModels.Pages
                     return;
                 }
 
-                DmmOpenApiResult<SessionIdResponse> loginSession;
-                HttpHelper.ClearCookies();
-                if (!string.IsNullOrEmpty(accountObject!.RefreshToken) && !string.IsNullOrEmpty(accountObject.Email) && !string.IsNullOrEmpty(accountObject.Password))
+                if (accountObject == null)
                 {
-                    var login = await DmmOpenApiHelper.Login(accountObject.Email, accountObject.Password);
-                    if (login.Failed)
-                    {
-                        accountObject.RefreshToken = string.Empty;
-                        ConfigUtils.Save();
-                        return;
-                    }
-                    loginSession = login;
-                }
-                else
-                {
-                    var login = await DmmOpenApiHelper.Login(accountObject.Email, accountObject.Password);
-                    if (login.Failed) return;
-                    loginSession = login;
-                }
-
-                if (loginSession == null)
-                {
-                    NotificationHelper.Warn("Login failed");
+                    NotificationHelper.Error("Account not found!");
                     return;
                 }
 
-                DmmGamePlayerApiHelper.SetUserCookies(loginSession.Value.SecureId, loginSession.Value.UniqueId);
+                HttpHelper.ClearCookies();
+                SessionIdResponse session;
+                var isValid = await DmmOpenApiHelper.CheckValidity(accountObject.LoginSecureId, accountObject.LoginSessionId);
+                if (isValid)
+                {
+                    session = new SessionIdResponse { SecureId = accountObject.LoginSecureId, UniqueId = accountObject.LoginSessionId };
+                }
+                else
+                {
+                    var loginResponse = await DmmOpenApiHelper.LegacyLogin(accountObject.Email, accountObject.Password);
+                    if (loginResponse.Failed)
+                    {
+                        NotificationHelper.Warn(loginResponse.Error!.Reason);
+                        return;
+                    }
+                    session = loginResponse.Value;
+                    accountObject.LoginSecureId = session.SecureId;
+                    accountObject.LoginSessionId = session.UniqueId;
+                }
+
+                DmmGamePlayerApiHelper.SetUserCookies(session.SecureId, session.UniqueId);
                 DmmGamePlayerApiHelper.SetAgeCheckDone();
                 ConfigUtils.PushAccountObject(accountObject);
+
+                //HttpHelper.ClearCookies();
+                //string accessToken;
+                //var checkTokenResponse = await DmmGamePlayerApiHelper.CheckAccessToken(accountObject.AccessToken);
+                //if (checkTokenResponse.Success && checkTokenResponse.Value.Result)
+                //{
+                //    accessToken = accountObject.AccessToken;
+                //}
+                //else
+                //{
+                //    var loginCodeResponse = await DmmOpenApiHelper.Login(accountObject.Email, accountObject.Password);
+                //    if (loginCodeResponse.Failed)
+                //    {
+                //        NotificationHelper.Warn("Get login code failed");
+                //        return;
+                //    }
+                //    var accessTokenResponse = await DmmGamePlayerApiHelper.IssueAccessToken(loginCodeResponse.Value.Code);
+                //    if (accessTokenResponse.Failed)
+                //    {
+                //        NotificationHelper.Warn("Issue access token failed");
+                //        return;
+                //    }
+                //    accessToken = accessTokenResponse.Value.AccessToken;
+                //    accountObject.AccessToken = accessToken;
+                //}
+
+                //DmmGamePlayerApiHelper.SetUserHeader(accessToken);
+                //DmmGamePlayerApiHelper.SetAgeCheckDone();
+                //ConfigUtils.PushAccountObject(accountObject);
 
                 var userInfo = await DmmGamePlayerApiHelper.GetUserInfo();
                 if (userInfo.Failed)

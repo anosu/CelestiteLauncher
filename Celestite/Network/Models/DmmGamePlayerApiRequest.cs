@@ -4,6 +4,21 @@ using Celestite.Utils;
 
 namespace Celestite.Network.Models;
 
+public class AuthLoginUrlRequest
+{
+    public string Prompt {  get; set; } = string.Empty;
+}
+
+public class IssueAccessTokenRequest
+{
+    public string Code { get; set; } = string.Empty;
+}
+
+public class CheckAccessTokenRequest
+{
+    public string AccessToken { get; set; } = string.Empty;
+}
+
 public class UserOsBaseRequest
 {
     public string UserOs => SystemInfoUtils.UserOs;
@@ -184,6 +199,9 @@ public class ArtemisStartPlayingRequest
     public string TitleId { get; set; } = string.Empty;
 }
 
+[JsonSerializable(typeof(AuthLoginUrlRequest))]
+[JsonSerializable(typeof(IssueAccessTokenRequest))]
+[JsonSerializable(typeof(CheckAccessTokenRequest))]
 [JsonSerializable(typeof(UserOsBaseRequest))]
 [JsonSerializable(typeof(FloorBaseRequest))]
 [JsonSerializable(typeof(MyGameSearch))]

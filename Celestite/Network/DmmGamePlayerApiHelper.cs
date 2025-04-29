@@ -190,6 +190,14 @@ namespace Celestite.Network
         // wsapi
         private const string WsApiEndpoint = "https://api-wsdgp.games.dmm.com";
 
+        private const string UserHeaderName = "actauth";
+
+        public static void SetUserHeader(string actauth)
+        {
+            HttpHelper.SetUserHeader(UserHeaderName, actauth);
+            HttpHelper.ActAuth = actauth;
+            LoginSessionChangedEvent?.Invoke(null, EventArgs.Empty);
+        }
 
         public static void SetUserCookies(string secureId, string sessionId)
         {
@@ -232,26 +240,26 @@ namespace Celestite.Network
                 await LoginRecord();
 
                 // 登录修复
-                var loginUrl = await GetLoginUrl();
-                if (loginUrl.Failed) return;
+                //var loginUrl = await GetLoginUrl();
+                //if (loginUrl.Failed) return;
 
-                using var loginRequest = new HttpRequestMessage(HttpMethod.Get, loginUrl.Value.Url);
-                using var loginResponse = await HttpHelper.SendRawAsync(loginRequest, [HttpStatusCode.Found]);
-                if (loginResponse.Failed) return;
+                //using var loginRequest = new HttpRequestMessage(HttpMethod.Get, loginUrl.Value.Url);
+                //using var loginResponse = await HttpHelper.SendRawAsync(loginRequest, [HttpStatusCode.Found]);
+                //if (loginResponse.Failed) return;
 
-                if (loginResponse.Value.StatusCode != HttpStatusCode.Found || loginResponse.Value.Headers.Location == null)
-                {
-                    Logger.Warn($"fix account got {loginResponse.Value.StatusCode}");
-                    return;
-                }
+                //if (loginResponse.Value.StatusCode != HttpStatusCode.Found || loginResponse.Value.Headers.Location == null)
+                //{
+                //    Logger.Warn($"fix account got {loginResponse.Value.StatusCode}");
+                //    return;
+                //}
 
-                using var httpRequest = new HttpRequestMessage(HttpMethod.Get, loginResponse.Value.Headers.Location);
-                httpRequest.Headers.TryAddWithoutValidation("Cookie", $"secid={HttpHelper.LoginSecureId};");
-                using var response = await HttpHelper.SendRawAsync(httpRequest, [HttpStatusCode.MovedPermanently]);
-                if (response.Failed || response.Value.Headers.Location == null) return;
+                //using var httpRequest = new HttpRequestMessage(HttpMethod.Get, loginResponse.Value.Headers.Location);
+                //httpRequest.Headers.TryAddWithoutValidation("Cookie", $"secid={HttpHelper.LoginSecureId};");
+                //using var response = await HttpHelper.SendRawAsync(httpRequest, [HttpStatusCode.MovedPermanently]);
+                //if (response.Failed || response.Value.Headers.Location == null) return;
 
-                var raw = await HttpHelper.GetAsync(response.Value.Headers.Location);
-                if (response.Failed || response.Value.StatusCode != HttpStatusCode.MovedPermanently || response.Value.Headers.Location == null) return;
+                //var raw = await HttpHelper.GetAsync(response.Value.Headers.Location);
+                //if (response.Failed || response.Value.StatusCode != HttpStatusCode.MovedPermanently || response.Value.Headers.Location == null) return;
             };
         }
 
@@ -296,6 +304,31 @@ namespace Celestite.Network
             var response = await HttpHelper.DgpGetJsonAsync("/v5/loginurl",
                 DmmGamePlayerApiResponseBaseContext.Default.DmmGamePlayerApiResponseLoginUrlResponse);
             return response.Failed ? DmmGamePlayerApiResult.Fail<LoginUrlResponse>(response.Exception) : DmmGamePlayerApiResult.Ok(response.Value);
+        }
+
+        public static async UniTask<DmmGamePlayerApiResult<LoginUrlResponse>> GetAuthLoginUrl()
+        {
+            var response = await HttpHelper.DgpPostJsonAsync("/v5/auth/login/url", new AuthLoginUrlRequest(), DmmGamePlayerApiRequestBaseContext.Default.AuthLoginUrlRequest,
+                DmmGamePlayerApiResponseBaseContext.Default.DmmGamePlayerApiResponseLoginUrlResponse);
+            return response.Failed ? DmmGamePlayerApiResult.Fail<LoginUrlResponse>(response.Exception) : DmmGamePlayerApiResult.Ok(response.Value);
+        }
+
+        public static async UniTask<DmmGamePlayerApiResult<IssueAccessTokenResponse>> IssueAccessToken(string code)
+        {
+            var response = await HttpHelper.DgpPostJsonAsync("/v5/auth/accesstoken/issue", new IssueAccessTokenRequest { Code = code }, DmmGamePlayerApiRequestBaseContext.Default.IssueAccessTokenRequest,
+                DmmGamePlayerApiResponseBaseContext.Default.DmmGamePlayerApiResponseIssueAccessTokenResponse);
+            return response.Failed ? DmmGamePlayerApiResult.Fail<IssueAccessTokenResponse>(response.Exception) : DmmGamePlayerApiResult.Ok(response.Value);
+        }
+
+        public static async UniTask<DmmGamePlayerApiResult<CheckAccessTokenResponse>> CheckAccessToken(string accessToken)
+        {
+            if (string.IsNullOrEmpty(accessToken))
+            {
+                return DmmGamePlayerApiResult.Ok(new CheckAccessTokenResponse { Result = false });
+            }
+            var response = await HttpHelper.DgpPostJsonAsync("/v5/auth/accesstoken/check", new CheckAccessTokenRequest { AccessToken = accessToken }, DmmGamePlayerApiRequestBaseContext.Default.CheckAccessTokenRequest,
+                DmmGamePlayerApiResponseBaseContext.Default.DmmGamePlayerApiResponseCheckAccessTokenResponse);
+            return response.Failed ? DmmGamePlayerApiResult.Fail<CheckAccessTokenResponse>(response.Exception) : DmmGamePlayerApiResult.Ok(response.Value);
         }
 
         public static async UniTask<DmmGamePlayerApiResult<List<AnnounceInfo>>> AnnounceInfo()

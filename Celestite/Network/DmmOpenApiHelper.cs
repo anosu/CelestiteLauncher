@@ -1,10 +1,14 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net;
+using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using System.Web;
 using Celestite.Network.Models;
+using Celestite.Pages.Default;
 using Celestite.Utils;
 using Cysharp.Threading.Tasks;
 using ZeroLog;
@@ -107,68 +111,84 @@ namespace Celestite.Network
         {
         }
     }
+
     public static class DmmOpenApiHelper
     {
-        private const string ApiBaseUrl = "https://evo.dmmapis.com";
-        private static readonly string DefaultAuthKey = Convert.ToBase64String("9p69sajOH9pdsHatYIDGebf81AgR:yaVBs60OAp4vR4XqR0S1DpotRCYiJkft"u8);
-        private static readonly AuthenticationHeaderValue DefaultAuthValue = new("Basic", DefaultAuthKey);
-        private static string _currentAccessToken = string.Empty;
-        private static string _currentRefreshToken = string.Empty;
+        private const string ApiBaseUrl = "https://accounts.dmm.com";
 
-        private const string LoginBaseUrl = "https://accounts.dmm.com/service/login";
-        private static readonly string LoginPathBase = "DRVESRUMTh1PEkYWV1sLGQIKWxldQEsUTQNCEloKRVkfBB8GFFMSQlcLQl1sQh9HBFhVWVRcQloOC1IIRjpeVFhQX1ELdBMBUSllTFsDE3YxBEEGfwgnXFAWXUBBEVZEAFxRY";
-        private static readonly string[] LoginPathSuffixes = { "V5dVgZBPQN1", "T5cV0t8N1pC", "S1yKWoONnIA" };
-
-
-        public static void UpdateAccessToken(string accessToken)
+        public static async UniTask<bool> CheckValidity(string accessToken)
         {
-            _currentAccessToken = accessToken;
-        }
-        public static void UpdateRefreshToken(string refreshToken)
-        {
-            _currentRefreshToken = refreshToken;
+            if (string.IsNullOrEmpty(accessToken))
+            {
+                return false;
+            }
+            var issueResponse = await DmmGamePlayerApiHelper.CheckAccessToken(accessToken);
+            if (issueResponse.Failed || !issueResponse.Value.Result)
+            {
+                return false;
+            }
+            return true;
         }
 
-        public static async UniTask<DmmOpenApiResult<SessionIdResponse>> Login(string email, string password)
+        public static async UniTask<bool> CheckValidity(string loginSecureId, string loginSessionId)
         {
-            var random = new Random();
-            string loginPath = LoginPathBase + LoginPathSuffixes[random.Next(LoginPathSuffixes.Length)];
-            string loginUrl = $"{LoginBaseUrl}/password/=/path={loginPath}?device=games-player";
-            var loginResponse = await HttpHelper.GetStringAsync(loginUrl);
+            if (string.IsNullOrEmpty(loginSecureId) || string.IsNullOrEmpty(loginSessionId))
+            {
+                return false;
+            }
+            var request = new HttpRequestMessage(HttpMethod.Post, "https://apidgp-gameplayer.games.dmm.com/v5/userinfo");
+            request.Headers.Add("Cookie", $"login_secure_id={loginSecureId}; login_session_id={loginSessionId}");
+            var userInfoResponse = await HttpHelper.SendRawAsync(request, DmmGamePlayerApiResponseBaseContext.Default.DmmGamePlayerApiResponseUserInfoResponse);
+            if (userInfoResponse.Failed || userInfoResponse.Value.ResultCode != DmmGamePlayerApiErrorCode.SUCCESS)
+            {
+                return false;
+            }
+            return true;
+        }
+
+        public static async UniTask<DmmOpenApiResult<SessionIdResponse>> LegacyLogin(string email, string password)
+        {
+            var loginUrlResponse = await DmmGamePlayerApiHelper.GetLoginUrl();
+            if (loginUrlResponse.Failed) return DmmOpenApiResult.Fail<SessionIdResponse>(loginUrlResponse.Error!);
+
+            var loginResponse = await HttpHelper.GetStringAsync(loginUrlResponse.Value.Url);
             if (loginResponse.Failed) return DmmOpenApiResult.Fail<SessionIdResponse>(loginResponse.Exception);
-            string tokenPattern = "\"token\":\"(.*?)\"";
-            Match tokenMatch = Regex.Match(loginResponse.Value, tokenPattern);
+
+            Match tokenMatch = Regex.Match(loginResponse.Value, "<input type=\"hidden\" name=\"token\" value=\"([^\"]+)\"/>");
             if (!tokenMatch.Success)
                 return DmmOpenApiResult.Fail<SessionIdResponse>(new Exception("Failed to get login token from html string"));
-            string token = tokenMatch.Groups[1].Value;
-            string authUrl = $"{LoginBaseUrl}/password/authenticate";
+            Match pathMatch = Regex.Match(loginResponse.Value, "<input type=\"hidden\" name=\"path\" value=\"([^\"]+)\"/>");
+            if (!pathMatch.Success)
+                return DmmOpenApiResult.Fail<SessionIdResponse>(new Exception("Failed to get login path from html string"));
+
             var authPayload = new Dictionary<string, string>
             {
-                { "token", token },
+                { "token", tokenMatch.Groups[1].Value },
                 { "login_id", email },
                 { "password", password },
-                { "path", loginPath },
+                { "path", pathMatch.Groups[1].Value },
                 { "device", "games-player" }
             };
-            var authResponse = await HttpHelper.PostFormDataAsync(LoginBaseUrl, "/password/authenticate", authPayload);
+            var authResponse = await HttpHelper.PostFormDataAsync(ApiBaseUrl, "/service/login/password/authenticate", authPayload);
             if (authResponse.Failed) return DmmOpenApiResult.Fail<SessionIdResponse>(authResponse.Exception);
             if (!authResponse.Value.IsSuccessStatusCode)
                 return DmmOpenApiResult.Fail<SessionIdResponse>(new Exception($"Error auth response code: {authResponse.Value.StatusCode}"));
-            var cookies = HttpHelper.GlobalCookieContainer.GetCookies(new Uri("https://dmm.com"));
-            string loginSecureId = null;
-            string loginSessionId = null;
-            foreach (Cookie cookie in cookies)
+
+            var cookies = HttpHelper.GlobalCookieContainer.GetAllCookies().Where(c => !c.Expired);
+            try
             {
-                if (cookie.Name == "login_secure_id") loginSecureId = cookie.Value;
-                if (cookie.Name == "login_session_id") loginSessionId = cookie.Value;
+                string loginSecureId = cookies.Single(x => x.Name == "login_secure_id").Value;
+                string loginSessionId = cookies.Single(x => x.Name == "login_session_id").Value;
+                return DmmOpenApiResult.Ok(new SessionIdResponse
+                {
+                    SecureId = loginSecureId,
+                    UniqueId = loginSessionId,
+                });
             }
-            if (loginSecureId == null || loginSessionId == null)
-                return DmmOpenApiResult.Fail<SessionIdResponse>(new Exception($"Error auth response code: {authResponse.Value.StatusCode}"));
-            return DmmOpenApiResult.Ok(new SessionIdResponse
+            catch (Exception e)
             {
-                SecureId = loginSecureId,
-                UniqueId = loginSessionId,
-            });
+                return DmmOpenApiResult.Fail<SessionIdResponse>(new Exception($"Failed to get loginSecureId or loginSessionId, {e.Message}"));
+            }
         }
 
         //public static async UniTask<DmmOpenApiResult<TokenResponse>> Login(string email, string password)
@@ -191,62 +211,104 @@ namespace Celestite.Network
         //    return DmmOpenApiResult.Fail<TokenResponse>(error);
         //}
 
-        public static async UniTask<DmmOpenApiResult<TokenResponse>> ExchangeAccessToken(string accessToken)
+        //public static async UniTask<DmmOpenApiResult<TokenResponse>> ExchangeAccessToken(string accessToken)
+        //{
+        //    var json = await HttpHelper.PostJsonWithAuthorizationAsync(ApiBaseUrl, "/connect/v1/token",
+        //        new TokenRequestAccessToken
+        //        {
+        //            AccessToken = accessToken
+        //        }, DmmOpenApiRequestBaseContext.Default.TokenRequestAccessToken, DmmOpenApiResponseBaseContext.Default.DmmOpenApiResponse, DefaultAuthValue);
+        //    if (json.Failed) return DmmOpenApiResult.Fail<TokenResponse>(json.Exception);
+        //    if (json.Value.Header.ResultCode.Equals("0"))
+        //    {
+        //        var tokenResponse = json.Value.Body.Deserialize(DmmOpenApiResponseBaseContext.Default.TokenResponse)!;
+        //        if (!string.IsNullOrEmpty(tokenResponse.AccessToken))
+        //            UpdateAccessToken(tokenResponse.AccessToken);
+        //        return DmmOpenApiResult.Ok(tokenResponse);
+        //    }
+        //    var error = json.Value.Body.Deserialize(DmmOpenApiResponseBaseContext.Default.DmmOpenApiErrorBody)!;
+        //    return DmmOpenApiResult.Fail<TokenResponse>(error);
+        //}
+
+        //public static async UniTask<DmmOpenApiResult<SessionIdResponse>> IssueSessionId(string userId)
+        //{
+        //    if (string.IsNullOrEmpty(_currentAccessToken))
+        //        throw new InvalidOperationException();
+        //    var json = await HttpHelper.PostJsonWithAuthorizationAsync(ApiBaseUrl, "/connect/v1/issueSessionId",
+        //        new IssueSessionIdRequest
+        //        {
+        //            UserId = userId
+        //        }, DmmOpenApiRequestBaseContext.Default.IssueSessionIdRequest, DmmOpenApiResponseBaseContext.Default.DmmOpenApiResponse, new AuthenticationHeaderValue("Bearer", _currentAccessToken));
+        //    if (json.Failed) return DmmOpenApiResult.Fail<SessionIdResponse>(json.Exception);
+        //    if (json.Value.Header.ResultCode.Equals("0"))
+        //    {
+        //        return DmmOpenApiResult.Ok(json.Value.Body.Deserialize(DmmOpenApiResponseBaseContext.Default.SessionIdResponse)!);
+        //    }
+        //    var error = json.Value.Body.Deserialize(DmmOpenApiResponseBaseContext.Default.DmmOpenApiErrorBody)!;
+        //    return DmmOpenApiResult.Fail<SessionIdResponse>(error);
+        //}
+
+        //public static async UniTask<DmmOpenApiResult<TokenResponse>> RefreshToken()
+        //{
+        //    var json = await HttpHelper.PostJsonWithAuthorizationAsync(ApiBaseUrl, "/connect/v1/token",
+        //        new RefreshTokenRequest()
+        //        {
+        //            RefreshToken = _currentRefreshToken
+        //        }, DmmOpenApiRequestBaseContext.Default.RefreshTokenRequest, DmmOpenApiResponseBaseContext.Default.DmmOpenApiResponse, DefaultAuthValue);
+        //    if (json.Failed) return DmmOpenApiResult.Fail<TokenResponse>(json.Exception);
+        //    if (json.Value.Header.ResultCode.Equals("0"))
+        //    {
+        //        var tokenResponse = json.Value.Body.Deserialize(DmmOpenApiResponseBaseContext.Default.TokenResponse)!;
+        //        if (!string.IsNullOrEmpty(tokenResponse.RefreshToken))
+        //            UpdateRefreshToken(tokenResponse.RefreshToken);
+        //        if (!string.IsNullOrEmpty(tokenResponse.AccessToken))
+        //            UpdateAccessToken(tokenResponse.AccessToken);
+        //        return DmmOpenApiResult.Ok(tokenResponse);
+        //    }
+        //    var error = json.Value.Body.Deserialize(DmmOpenApiResponseBaseContext.Default.DmmOpenApiErrorBody)!;
+        //    return DmmOpenApiResult.Fail<TokenResponse>(error);
+        //}
+
+        public static async UniTask<DmmOpenApiResult<LoginSuccessResponse>> Login(string email, string password)
         {
-            var json = await HttpHelper.PostJsonWithAuthorizationAsync(ApiBaseUrl, "/connect/v1/token",
-                new TokenRequestAccessToken
-                {
-                    AccessToken = accessToken
-                }, DmmOpenApiRequestBaseContext.Default.TokenRequestAccessToken, DmmOpenApiResponseBaseContext.Default.DmmOpenApiResponse, DefaultAuthValue);
-            if (json.Failed) return DmmOpenApiResult.Fail<TokenResponse>(json.Exception);
-            if (json.Value.Header.ResultCode.Equals("0"))
+            var loginUrlResponse = await DmmGamePlayerApiHelper.GetAuthLoginUrl();
+            if (loginUrlResponse.Failed) return DmmOpenApiResult.Fail<LoginSuccessResponse>("Fail to get login url");
+
+            Uri loginUrl = new Uri(loginUrlResponse.Value.Url);
+
+            var loginRedirectResponse = await HttpHelper.GetResponseHeaderAsync(loginUrl);
+            if (loginRedirectResponse.Failed) return DmmOpenApiResult.Fail<LoginSuccessResponse>("Fail to get redirected login url");
+
+            var loginResponse = await HttpHelper.GetStringAsync($"{loginUrl.GetLeftPart(UriPartial.Authority)}{loginRedirectResponse.Value.Headers.Location}");
+            if (loginResponse.Failed) return DmmOpenApiResult.Fail<LoginSuccessResponse>("Fail to get login html");
+
+            string tokenPattern = "<input type=\"hidden\" name=\"token\" value=\"([^\"]+)\"/>";
+            Match tokenMatch = Regex.Match(loginResponse.Value, tokenPattern);
+            if (!tokenMatch.Success)
+                return DmmOpenApiResult.Fail<LoginSuccessResponse>(new Exception("Failed to get login token from html string"));
+
+            string loginToken = tokenMatch.Groups[1].Value;
+            string authorizeUrl = loginUrlResponse.Value.Url.Split('=').Last();
+            var authResponse = await HttpHelper.PostFormDataAsync(ApiBaseUrl, "/service/oauth/authenticate", new Dictionary<string, string>
             {
-                var tokenResponse = json.Value.Body.Deserialize(DmmOpenApiResponseBaseContext.Default.TokenResponse)!;
-                if (!string.IsNullOrEmpty(tokenResponse.AccessToken))
-                    UpdateAccessToken(tokenResponse.AccessToken);
-                return DmmOpenApiResult.Ok(tokenResponse);
-            }
-            var error = json.Value.Body.Deserialize(DmmOpenApiResponseBaseContext.Default.DmmOpenApiErrorBody)!;
-            return DmmOpenApiResult.Fail<TokenResponse>(error);
+                { "token", loginToken },
+                { "login_id", email },
+                { "password", password },
+                { "path", authorizeUrl },
+                { "recaptchaToken", "" }
+            });
+            if (authResponse.Failed) return DmmOpenApiResult.Fail<LoginSuccessResponse>(authResponse.Exception);
+
+            var codeResponse = await HttpHelper.GetResponseHeaderAsync(WebUtility.UrlDecode(authorizeUrl));
+            if (codeResponse.Failed || codeResponse.Value.Headers.Location == null)
+                return DmmOpenApiResult.Fail<LoginSuccessResponse>(new Exception("Failed to get login success code"));
+
+            Uri loginSuccessUrl = codeResponse.Value.Headers.Location;
+            string? code = HttpUtility.ParseQueryString(loginSuccessUrl.Query).Get("code");
+            if (string.IsNullOrEmpty(code)) return DmmOpenApiResult.Fail<LoginSuccessResponse>(new Exception("Code not found in login success url"));
+
+            return DmmOpenApiResult.Ok(new LoginSuccessResponse { Code = code });
         }
 
-        public static async UniTask<DmmOpenApiResult<SessionIdResponse>> IssueSessionId(string userId)
-        {
-            if (string.IsNullOrEmpty(_currentAccessToken))
-                throw new InvalidOperationException();
-            var json = await HttpHelper.PostJsonWithAuthorizationAsync(ApiBaseUrl, "/connect/v1/issueSessionId",
-                new IssueSessionIdRequest
-                {
-                    UserId = userId
-                }, DmmOpenApiRequestBaseContext.Default.IssueSessionIdRequest, DmmOpenApiResponseBaseContext.Default.DmmOpenApiResponse, new AuthenticationHeaderValue("Bearer", _currentAccessToken));
-            if (json.Failed) return DmmOpenApiResult.Fail<SessionIdResponse>(json.Exception);
-            if (json.Value.Header.ResultCode.Equals("0"))
-            {
-                return DmmOpenApiResult.Ok(json.Value.Body.Deserialize(DmmOpenApiResponseBaseContext.Default.SessionIdResponse)!);
-            }
-            var error = json.Value.Body.Deserialize(DmmOpenApiResponseBaseContext.Default.DmmOpenApiErrorBody)!;
-            return DmmOpenApiResult.Fail<SessionIdResponse>(error);
-        }
-
-        public static async UniTask<DmmOpenApiResult<TokenResponse>> RefreshToken()
-        {
-            var json = await HttpHelper.PostJsonWithAuthorizationAsync(ApiBaseUrl, "/connect/v1/token",
-                new RefreshTokenRequest()
-                {
-                    RefreshToken = _currentRefreshToken
-                }, DmmOpenApiRequestBaseContext.Default.RefreshTokenRequest, DmmOpenApiResponseBaseContext.Default.DmmOpenApiResponse, DefaultAuthValue);
-            if (json.Failed) return DmmOpenApiResult.Fail<TokenResponse>(json.Exception);
-            if (json.Value.Header.ResultCode.Equals("0"))
-            {
-                var tokenResponse = json.Value.Body.Deserialize(DmmOpenApiResponseBaseContext.Default.TokenResponse)!;
-                if (!string.IsNullOrEmpty(tokenResponse.RefreshToken))
-                    UpdateRefreshToken(tokenResponse.RefreshToken);
-                if (!string.IsNullOrEmpty(tokenResponse.AccessToken))
-                    UpdateAccessToken(tokenResponse.AccessToken);
-                return DmmOpenApiResult.Ok(tokenResponse);
-            }
-            var error = json.Value.Body.Deserialize(DmmOpenApiResponseBaseContext.Default.DmmOpenApiErrorBody)!;
-            return DmmOpenApiResult.Fail<TokenResponse>(error);
-        }
     }
 }

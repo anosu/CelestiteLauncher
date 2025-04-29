@@ -63,27 +63,58 @@ namespace Celestite.ViewModels.DefaultVM
         private static async UniTask<DmmOpenApiResult> Request(string email, string password, bool saveEmail, bool savePassword, bool autoLogin)
         {
             HttpHelper.ClearCookies();
-            var login = await DmmOpenApiHelper.Login(email, password);
-            if (login.Failed)
-                return login;
+            var loginResponse = await DmmOpenApiHelper.LegacyLogin(email, password);
+            if (loginResponse.Failed) return loginResponse;
+
+            var session = loginResponse.Value;
+
             if (!ConfigUtils.TryGetGuidByAccountEmail(email, out var id) || !ConfigUtils.TryGetAccountObjectByGuid(id, out var accountObject))
                 accountObject = new AccountObject();
+
             accountObject!.SaveEmail = saveEmail;
             accountObject!.SavePassword = savePassword;
-            if (saveEmail)
-                accountObject!.Email = email;
-            if (savePassword)
-                accountObject!.Password = password;
+            if (saveEmail) accountObject!.Email = email;
+            if (savePassword) accountObject!.Password = password;
             accountObject!.AutoLogin = autoLogin;
             if (autoLogin)
             {
                 accountObject.Email = email;
                 accountObject.Password = password;
             }
+            accountObject.LoginSecureId = session.SecureId;
+            accountObject.LoginSessionId = session.UniqueId;
             ConfigUtils.PushAccountObject(accountObject);
-            DmmGamePlayerApiHelper.SetUserCookies(login.Value.SecureId, login.Value.UniqueId);
+            DmmGamePlayerApiHelper.SetUserCookies(session.SecureId, session.UniqueId);
             DmmGamePlayerApiHelper.SetAgeCheckDone();
-            return login;
+            return loginResponse;
+
+            //HttpHelper.ClearCookies();
+            //var loginCodeResponse = await DmmOpenApiHelper.Login(email, password);
+            //if (loginCodeResponse.Failed) return loginCodeResponse;
+
+            //var accessTokenResponse = await DmmGamePlayerApiHelper.IssueAccessToken(loginCodeResponse.Value.Code);
+            //if (accessTokenResponse.Failed) return DmmOpenApiResult.Fail(accessTokenResponse.Error!);
+
+            //string accessToken = accessTokenResponse.Value.AccessToken;
+
+            //if (!ConfigUtils.TryGetGuidByAccountEmail(email, out var id) || !ConfigUtils.TryGetAccountObjectByGuid(id, out var accountObject))
+            //    accountObject = new AccountObject();
+
+            //accountObject!.SaveEmail = saveEmail;
+            //accountObject!.SavePassword = savePassword;
+            //if (saveEmail) accountObject!.Email = email;
+            //if (savePassword) accountObject!.Password = password;
+            //accountObject!.AutoLogin = autoLogin;
+            //if (autoLogin)
+            //{
+            //    accountObject.Email = email;
+            //    accountObject.Password = password;
+            //    accountObject.AccessToken = accessToken;
+            //}
+            //ConfigUtils.PushAccountObject(accountObject);
+            //DmmGamePlayerApiHelper.SetUserHeader(accessToken);
+            //DmmGamePlayerApiHelper.SetAgeCheckDone();
+            //return loginCodeResponse;
         }
 
         //private static async UniTask<DmmOpenApiResult> Request(string email, string password, bool saveEmail, bool savePassword, bool autoLogin)
@@ -142,18 +173,66 @@ namespace Celestite.ViewModels.DefaultVM
             {
                 SetLoginStatus();
                 HttpHelper.ClearCookies();
-                var login = await DmmOpenApiHelper.Login(accountObject.Email, accountObject.Password);
-                if (login.Failed)
+                SessionIdResponse session;
+                var isValid = await DmmOpenApiHelper.CheckValidity(accountObject.LoginSecureId, accountObject.LoginSessionId);
+                if (isValid)
                 {
-                    SetLoginErrorStatus(login.Error!);
-                    return;
+                    session = new SessionIdResponse { SecureId = accountObject.LoginSecureId, UniqueId = accountObject.LoginSessionId };
                 }
-                ConfigUtils.PushAccountObject(accountObject);
-                DmmGamePlayerApiHelper.SetUserCookies(login.Value.SecureId, login.Value.UniqueId);
+                else
+                {
+                    var loginResponse = await DmmOpenApiHelper.LegacyLogin(accountObject.Email, accountObject.Password);
+                    if (loginResponse.Failed)
+                    {
+                        SetLoginErrorStatus(loginResponse.Error!);
+                        return;
+                    }
+                    session = loginResponse.Value;
+                    accountObject.LoginSecureId = session.SecureId;
+                    accountObject.LoginSessionId = session.UniqueId;
+                    ConfigUtils.PushAccountObject(accountObject);
+                }
+
+                DmmGamePlayerApiHelper.SetUserCookies(session.SecureId, session.UniqueId);
                 DmmGamePlayerApiHelper.SetAgeCheckDone();
                 await ProcessUser();
             }
             SetDefaultStatus();
+
+            //if (ConfigUtils.TryGetLastLogin(out var accountObject) && accountObject!.AutoLogin)
+            //{
+            //    SetLoginStatus();
+            //    HttpHelper.ClearCookies();
+            //    string accessToken;
+            //    var checkTokenResponse = await DmmGamePlayerApiHelper.CheckAccessToken(accountObject.AccessToken);
+            //    if (checkTokenResponse.Success && checkTokenResponse.Value.Result)
+            //    {
+            //        accessToken = accountObject.AccessToken;
+            //    }
+            //    else
+            //    {
+            //        var loginCodeResponse = await DmmOpenApiHelper.Login(accountObject.Email, accountObject.Password);
+            //        if (loginCodeResponse.Failed)
+            //        {
+            //            SetLoginErrorStatus(loginCodeResponse.Error!);
+            //            return;
+            //        }
+            //        var accessTokenResponse = await DmmGamePlayerApiHelper.IssueAccessToken(loginCodeResponse.Value.Code);
+            //        if (accessTokenResponse.Failed)
+            //        {
+            //            SetLoginErrorStatus(accessTokenResponse.ErrorMessage!);
+            //            return;
+            //        }
+            //        accessToken = accessTokenResponse.Value.AccessToken;
+            //        accountObject.AccessToken = accessToken;
+            //        ConfigUtils.PushAccountObject(accountObject);
+            //    }
+
+            //    DmmGamePlayerApiHelper.SetUserHeader(accessToken);
+            //    DmmGamePlayerApiHelper.SetAgeCheckDone();
+            //    await ProcessUser();
+            //}
+            //SetDefaultStatus();
         }
 
         //[RelayCommand]
