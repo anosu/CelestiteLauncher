@@ -894,13 +894,26 @@ namespace Celestite.Network
             }
         }
 
-        public static async UniTask<NetworkOperationResult<string>> GetStringAsync(string url, CancellationToken cancellationToken = default)
+        public static async UniTask<NetworkOperationResult<string>> GetStringFollowAsync(string baseUrl, string path, int maxRedirects = 5, CancellationToken cancellationToken = default)
         {
+            if (maxRedirects <= 0)
+                return NetworkOperationResult.Fail<string>(new Exception("Too many redirects"));
+
+            var originalUri = new Uri(!string.IsNullOrEmpty(baseUrl) ? ZString.Concat(baseUrl, path) : path);
             try
             {
-                var response = await MainHttpClient.GetAsync(url, cancellationToken);
+                using var response = await MainHttpClient.GetAsync(originalUri, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
                 if (response.IsSuccessStatusCode)
-                    return NetworkOperationResult.Ok(await response.Content.ReadAsStringAsync());
+                    return NetworkOperationResult.Ok(await response.Content.ReadAsStringAsync(cancellationToken));
+                if (response.StatusCode == HttpStatusCode.Found || response.StatusCode == HttpStatusCode.MovedPermanently || response.StatusCode == HttpStatusCode.SeeOther)
+                {
+                    var location = response.Headers.Location;
+                    if (location == null)
+                        return NetworkOperationResult.Fail<string>(new Exception("Redirect with no Location header"));
+
+                    var redirectUri = location.IsAbsoluteUri ? location : new Uri(originalUri, location);
+                    return await GetStringFollowAsync(string.Empty, redirectUri.ToString(), maxRedirects - 1, cancellationToken);
+                }
                 throw new HttpRequestException($"Error StatusCode {response.StatusCode}");
             }
             catch (Exception ex)

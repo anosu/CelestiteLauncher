@@ -146,12 +146,20 @@ namespace Celestite.Network
             return true;
         }
 
+        public static async UniTask<bool> CheckValidity(string loginSecureId, string loginSessionId, string accessToken)
+        {
+            bool isLoginTokenValid = await CheckValidity(loginSecureId, loginSessionId);
+            if (!isLoginTokenValid) return false;
+            bool isAccessTokenValid = await CheckValidity(accessToken);
+            return isAccessTokenValid;
+        }
+
         public static async UniTask<DmmOpenApiResult<SessionIdResponse>> LegacyLogin(string email, string password)
         {
             var loginUrlResponse = await DmmGamePlayerApiHelper.GetLoginUrl();
             if (loginUrlResponse.Failed) return DmmOpenApiResult.Fail<SessionIdResponse>(loginUrlResponse.Error!);
 
-            var loginResponse = await HttpHelper.GetStringAsync(loginUrlResponse.Value.Url);
+            var loginResponse = await HttpHelper.GetStringAsync(string.Empty, loginUrlResponse.Value.Url);
             if (loginResponse.Failed) return DmmOpenApiResult.Fail<SessionIdResponse>(loginResponse.Exception);
 
             Match tokenMatch = Regex.Match(loginResponse.Value, "<input type=\"hidden\" name=\"token\" value=\"([^\"]+)\"/>");
@@ -269,23 +277,18 @@ namespace Celestite.Network
         //    return DmmOpenApiResult.Fail<TokenResponse>(error);
         //}
 
-        public static async UniTask<DmmOpenApiResult<LoginSuccessResponse>> Login(string email, string password)
+        public static async UniTask<DmmOpenApiResult<LoginSessionResponse>> Login(string email, string password)
         {
             var loginUrlResponse = await DmmGamePlayerApiHelper.GetAuthLoginUrl();
-            if (loginUrlResponse.Failed) return DmmOpenApiResult.Fail<LoginSuccessResponse>("Fail to get login url");
+            if (loginUrlResponse.Failed) return DmmOpenApiResult.Fail<LoginSessionResponse>("Fail to get login url");
 
-            Uri loginUrl = new Uri(loginUrlResponse.Value.Url);
-
-            var loginRedirectResponse = await HttpHelper.GetResponseHeaderAsync(loginUrl);
-            if (loginRedirectResponse.Failed) return DmmOpenApiResult.Fail<LoginSuccessResponse>("Fail to get redirected login url");
-
-            var loginResponse = await HttpHelper.GetStringAsync($"{loginUrl.GetLeftPart(UriPartial.Authority)}{loginRedirectResponse.Value.Headers.Location}");
-            if (loginResponse.Failed) return DmmOpenApiResult.Fail<LoginSuccessResponse>("Fail to get login html");
+            var loginResponse = await HttpHelper.GetStringFollowAsync(string.Empty, loginUrlResponse.Value.Url);
+            if (loginResponse.Failed) return DmmOpenApiResult.Fail<LoginSessionResponse>("Fail to get login html");
 
             string tokenPattern = "<input type=\"hidden\" name=\"token\" value=\"([^\"]+)\"/>";
             Match tokenMatch = Regex.Match(loginResponse.Value, tokenPattern);
             if (!tokenMatch.Success)
-                return DmmOpenApiResult.Fail<LoginSuccessResponse>(new Exception("Failed to get login token from html string"));
+                return DmmOpenApiResult.Fail<LoginSessionResponse>(new Exception("Failed to get login token from html string"));
 
             string loginToken = tokenMatch.Groups[1].Value;
             string authorizeUrl = loginUrlResponse.Value.Url.Split('=').Last();
@@ -297,17 +300,37 @@ namespace Celestite.Network
                 { "path", authorizeUrl },
                 { "recaptchaToken", "" }
             });
-            if (authResponse.Failed) return DmmOpenApiResult.Fail<LoginSuccessResponse>(authResponse.Exception);
+            if (authResponse.Failed) return DmmOpenApiResult.Fail<LoginSessionResponse>(authResponse.Exception);
+
+            string loginSecureId, loginSessionId;
+            var cookies = HttpHelper.GlobalCookieContainer.GetAllCookies().Where(c => !c.Expired);
+            try
+            {
+                loginSecureId = cookies.Single(x => x.Name == "login_secure_id").Value;
+                loginSessionId = cookies.Single(x => x.Name == "login_session_id").Value;
+            }
+            catch (Exception e)
+            {
+                return DmmOpenApiResult.Fail<LoginSessionResponse>(new Exception($"Failed to get loginSecureId or loginSessionId, {e.Message}"));
+            }
 
             var codeResponse = await HttpHelper.GetResponseHeaderAsync(WebUtility.UrlDecode(authorizeUrl));
             if (codeResponse.Failed || codeResponse.Value.Headers.Location == null)
-                return DmmOpenApiResult.Fail<LoginSuccessResponse>(new Exception("Failed to get login success code"));
+                return DmmOpenApiResult.Fail<LoginSessionResponse>(new Exception("Failed to get login success code"));
 
             Uri loginSuccessUrl = codeResponse.Value.Headers.Location;
             string? code = HttpUtility.ParseQueryString(loginSuccessUrl.Query).Get("code");
-            if (string.IsNullOrEmpty(code)) return DmmOpenApiResult.Fail<LoginSuccessResponse>(new Exception("Code not found in login success url"));
+            if (string.IsNullOrEmpty(code)) return DmmOpenApiResult.Fail<LoginSessionResponse>(new Exception("Code not found in login success url"));
 
-            return DmmOpenApiResult.Ok(new LoginSuccessResponse { Code = code });
+            var tokenResponse = await DmmGamePlayerApiHelper.IssueAccessToken(code);
+            if (tokenResponse.Failed) return DmmOpenApiResult.Fail<LoginSessionResponse>(tokenResponse.Error!);
+
+            return DmmOpenApiResult.Ok(new LoginSessionResponse
+            {
+                SecureId = loginSecureId,
+                UniqueId = loginSessionId,
+                AccessToken = tokenResponse.Value.AccessToken
+            });
         }
 
     }

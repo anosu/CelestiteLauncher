@@ -196,7 +196,6 @@ namespace Celestite.Network
         {
             HttpHelper.SetUserHeader(UserHeaderName, actauth);
             HttpHelper.ActAuth = actauth;
-            LoginSessionChangedEvent?.Invoke(null, EventArgs.Empty);
         }
 
         public static void SetUserCookies(string secureId, string sessionId)
@@ -211,6 +210,15 @@ namespace Celestite.Network
             ]);
             HttpHelper.LoginSecureId = secureId;
             HttpHelper.LoginSessionId = sessionId;
+        }
+
+        public static void SetUserToken(string secureId, string sessionId, string? actauth)
+        {
+            SetUserCookies(secureId, sessionId);
+            if (actauth != null)
+            {
+                SetUserHeader(actauth);
+            }
             LoginSessionChangedEvent?.Invoke(null, EventArgs.Empty);
         }
 

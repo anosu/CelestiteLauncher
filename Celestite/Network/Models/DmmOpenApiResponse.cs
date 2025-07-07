@@ -28,9 +28,11 @@ public class ValidationError
     public string Code { get; set; } = string.Empty;
 }
 
-public class LoginSuccessResponse
+public class LoginSessionResponse
 {
-    public string Code { get; set; } = string.Empty;
+    public string SecureId { get; set; } = string.Empty;
+    public string UniqueId { get; set; } = string.Empty;
+    public string AccessToken { get; set; } = string.Empty;
 }
 
 public class TokenResponse

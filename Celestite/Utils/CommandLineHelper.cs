@@ -182,10 +182,10 @@ namespace Celestite.Utils
         private static async Task<bool> NoGuiLogin(LaunchCommandLine launchCommandLine)
         {
             HttpHelper.ClearCookies();
-            SessionIdResponse session;
+            LoginSessionResponse session;
             if (!string.IsNullOrEmpty(launchCommandLine.Username) && !string.IsNullOrEmpty(launchCommandLine.Password))
             {
-                var loginResponse = await DmmOpenApiHelper.LegacyLogin(launchCommandLine.Username, launchCommandLine.Password);
+                var loginResponse = await DmmOpenApiHelper.Login(launchCommandLine.Username, launchCommandLine.Password);
                 if (loginResponse.Failed) return false;
                 session = loginResponse.Value;
             }
@@ -193,18 +193,24 @@ namespace Celestite.Utils
             {
                 if (ConfigUtils.TryGetLastLogin(out var accountObject) && accountObject!.AutoLogin)
                 {
-                    bool isValid = await DmmOpenApiHelper.CheckValidity(accountObject.LoginSecureId, accountObject.LoginSessionId);
+                    bool isValid = await DmmOpenApiHelper.CheckValidity(accountObject.LoginSecureId, accountObject.LoginSessionId, accountObject.AccessToken);
                     if (isValid)
                     {
-                        session = new SessionIdResponse { SecureId = accountObject.LoginSecureId, UniqueId = accountObject.LoginSessionId };
+                        session = new LoginSessionResponse
+                        {
+                            SecureId = accountObject.LoginSecureId,
+                            UniqueId = accountObject.LoginSessionId,
+                            AccessToken = accountObject.AccessToken
+                        };
                     }
                     else
                     {
-                        var loginResponse = await DmmOpenApiHelper.LegacyLogin(launchCommandLine.Username, launchCommandLine.Password);
+                        var loginResponse = await DmmOpenApiHelper.Login(launchCommandLine.Username, launchCommandLine.Password);
                         if (loginResponse.Failed) return false;
                         session = loginResponse.Value;
                         accountObject.LoginSecureId = session.SecureId;
                         accountObject.LoginSessionId = session.UniqueId;
+                        accountObject.AccessToken = session.AccessToken;
                         ConfigUtils.PushAccountObject(accountObject);
                     }
                 }
@@ -215,7 +221,7 @@ namespace Celestite.Utils
                 }
             }
 
-            DmmGamePlayerApiHelper.SetUserCookies(session.SecureId, session.UniqueId);
+            DmmGamePlayerApiHelper.SetUserToken(session.SecureId, session.UniqueId, session.AccessToken);
             DmmGamePlayerApiHelper.SetAgeCheckDone();
             return true;
 

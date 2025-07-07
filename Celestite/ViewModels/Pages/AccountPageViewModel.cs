@@ -85,7 +85,7 @@ namespace Celestite.ViewModels.Pages
                 try
                 {
                     HttpHelper.ClearCookies();
-                    var loginResponse = await DmmOpenApiHelper.LegacyLogin(viewModel.Email, viewModel.Password);
+                    var loginResponse = await DmmOpenApiHelper.Login(viewModel.Email, viewModel.Password);
                     if (loginResponse.Failed)
                     {
                         NotificationHelper.Warn($"Login failed, {loginResponse.Error!.Reason}");
@@ -99,12 +99,13 @@ namespace Celestite.ViewModels.Pages
                         Password = viewModel.Password,
                         LoginSecureId = loginResponse.Value.SecureId,
                         LoginSessionId = loginResponse.Value.UniqueId,
+                        AccessToken = loginResponse.Value.AccessToken,
                         SaveEmail = true,
                         SavePassword = true
                     };
                     ConfigUtils.PushAccountObject(acc, notPushLastLogin: true);
                     AccountObjects.Add(new AccountObjectForRenderer(acc.Email, string.Empty, acc.Id, viewModel.AutoLogin, false));
-                    DmmGamePlayerApiHelper.SetUserCookies(HttpHelper.LoginSecureId, HttpHelper.LoginSessionId);
+                    DmmGamePlayerApiHelper.SetUserToken(HttpHelper.LoginSecureId, HttpHelper.LoginSessionId, HttpHelper.ActAuth);
                     NotificationHelper.Success(Localization.AddAccountSuccess);
 
                     //HttpHelper.ClearCookies();
@@ -239,15 +240,20 @@ namespace Celestite.ViewModels.Pages
                 }
 
                 HttpHelper.ClearCookies();
-                SessionIdResponse session;
-                var isValid = await DmmOpenApiHelper.CheckValidity(accountObject.LoginSecureId, accountObject.LoginSessionId);
+                LoginSessionResponse session;
+                var isValid = await DmmOpenApiHelper.CheckValidity(accountObject.LoginSecureId, accountObject.LoginSessionId, accountObject.AccessToken);
                 if (isValid)
                 {
-                    session = new SessionIdResponse { SecureId = accountObject.LoginSecureId, UniqueId = accountObject.LoginSessionId };
+                    session = new LoginSessionResponse
+                    {
+                        SecureId = accountObject.LoginSecureId,
+                        UniqueId = accountObject.LoginSessionId,
+                        AccessToken = accountObject.AccessToken
+                    };
                 }
                 else
                 {
-                    var loginResponse = await DmmOpenApiHelper.LegacyLogin(accountObject.Email, accountObject.Password);
+                    var loginResponse = await DmmOpenApiHelper.Login(accountObject.Email, accountObject.Password);
                     if (loginResponse.Failed)
                     {
                         NotificationHelper.Warn(loginResponse.Error!.Reason);
@@ -256,9 +262,10 @@ namespace Celestite.ViewModels.Pages
                     session = loginResponse.Value;
                     accountObject.LoginSecureId = session.SecureId;
                     accountObject.LoginSessionId = session.UniqueId;
+                    accountObject.AccessToken = session.AccessToken;
                 }
 
-                DmmGamePlayerApiHelper.SetUserCookies(session.SecureId, session.UniqueId);
+                DmmGamePlayerApiHelper.SetUserToken(session.SecureId, session.UniqueId, session.AccessToken);
                 DmmGamePlayerApiHelper.SetAgeCheckDone();
                 ConfigUtils.PushAccountObject(accountObject);
 
