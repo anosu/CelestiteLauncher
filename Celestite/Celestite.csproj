@@ -18,6 +18,7 @@
 		<AvaloniaResource Include="Assets\Cert\himari_proxy.pem" />
 		<AvaloniaResource Include="Assets\I18N\en-US.json" />
 		<AvaloniaResource Include="Assets\I18N\zh-CN.json" />
+		<AvaloniaResource Include="Assets\I18N\ja-JP.json" />
 	</ItemGroup>
 
 	<ItemGroup>
