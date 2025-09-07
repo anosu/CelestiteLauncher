@@ -11,6 +11,8 @@ jobs:
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
+      with:
+        ref: 'feature/add-japanese-translation'
 
     - name: Setup .NET
       uses: actions/setup-dotnet@v4
