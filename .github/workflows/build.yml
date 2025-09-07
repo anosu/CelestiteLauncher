@@ -13,6 +13,7 @@ jobs:
       uses: actions/checkout@v4
       with:
         ref: 'feature/add-japanese-translation'
+        submodules: 'recursive'
 
     - name: Setup .NET
       uses: actions/setup-dotnet@v4
