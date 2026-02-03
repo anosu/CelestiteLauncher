@@ -39,13 +39,13 @@ namespace Celestite.Network
         protected DmmGamePlayerApiResult(DmmGamePlayerApiErrorCode errorCode, string? error)
         {
             var success = errorCode == DmmGamePlayerApiErrorCode.SUCCESS;
-            switch (success)
-            {
-                case true when error != null:
-                    throw new InvalidOperationException();
-                case false when error == null:
-                    throw new InvalidOperationException();
-            }
+            //switch (success)
+            //{
+            //    case true when error != null:
+            //        throw new InvalidOperationException();
+            //    case false when error == null:
+            //        throw new InvalidOperationException();
+            //}
 
             ErrorCode = errorCode;
             ErrorMessage = error;
@@ -57,13 +57,13 @@ namespace Celestite.Network
         protected DmmGamePlayerApiResult(DmmGamePlayerApiErrorCode errorCode, string? error, string productId, TApiGameType gameType)
         {
             var success = errorCode == DmmGamePlayerApiErrorCode.SUCCESS;
-            switch (success)
-            {
-                case true when error != null:
-                    throw new InvalidOperationException();
-                case false when error == null:
-                    throw new InvalidOperationException();
-            }
+            //switch (success)
+            //{
+            //    case true when error != null:
+            //        throw new InvalidOperationException();
+            //    case false when error == null:
+            //        throw new InvalidOperationException();
+            //}
 
             ErrorCode = errorCode;
             ErrorMessage = error;
